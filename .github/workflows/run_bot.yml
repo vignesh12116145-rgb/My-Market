@@ -1,26 +1,240 @@
-name: Financial Intelligence Bot
+"""
+Extended News Sources Module
+Adds YouTube and X (Twitter) integration
+"""
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 0,5,10,15,20 * * *'
-    - cron: '30 2,7,12,17,22 * * *'
+import os
+from typing import List, Dict
+import logging
 
-jobs:
-  run-advisor:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-      - name: Install
-        run: pip install requests yfinance pyTelegramBotAPI
-      - name: Execute
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-          GITHUB_ACTIONS: "true"
-        run: python market_app.py
+logger = logging.getLogger(__name__)
+
+# Optional: YouTube integration
+try:
+    from googleapiclient.discovery import build
+    YOUTUBE_AVAILABLE = True
+except ImportError:
+    YOUTUBE_AVAILABLE = False
+    logger.warning("YouTube API not available. Install google-api-python-client to enable.")
+
+# Optional: Twitter/X integration
+try:
+    import tweepy
+    TWITTER_AVAILABLE = True
+except ImportError:
+    TWITTER_AVAILABLE = False
+    logger.warning("Twitter API not available. Install tweepy to enable.")
+
+
+class YouTubeNewsMonitor:
+    """Monitor YouTube channels for financial news"""
+    
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv('YOUTUBE_API_KEY')
+        self.youtube = None
+        
+        if self.api_key and YOUTUBE_AVAILABLE:
+            self.youtube = build('youtube', 'v3', developerKey=self.api_key)
+        
+        # Financial YouTube channels
+        self.channels = {
+            'UCYJbYGaK0KT7g6N9-oTLbSA': 'Moneycontrol',
+            'UCrM7B7SL_g1edFOnmj-SDKg': 'Bloomberg Quicktake',
+            'UCaP0VvUAkVvVj6Rm6S7YN2w': 'Economic Times',
+            'UChqQTXS7RKz7D-EzJ012_gA': 'CNBC TV18',
+            'UCJKdlSq2AZ18Ew4HKlqQVZA': 'Bloomberg Markets',
+        }
+    
+    async def get_latest_videos(self, max_results: int = 5) -> List[Dict]:
+        """Get latest videos from financial channels"""
+        if not self.youtube:
+            return []
+        
+        videos = []
+        
+        try:
+            for channel_id, channel_name in self.channels.items():
+                request = self.youtube.search().list(
+                    part='snippet',
+                    channelId=channel_id,
+                    maxResults=max_results,
+                    order='date',
+                    type='video'
+                )
+                response = request.execute()
+                
+                for item in response.get('items', []):
+                    snippet = item['snippet']
+                    videos.append({
+                        'title': snippet['title'],
+                        'description': snippet['description'][:200],
+                        'channel': channel_name,
+                        'published': snippet['publishedAt'],
+                        'video_id': item['id']['videoId'],
+                        'url': f"https://youtube.com/watch?v={item['id']['videoId']}",
+                        'thumbnail': snippet['thumbnails']['high']['url']
+                    })
+        
+        except Exception as e:
+            logger.error(f"Error fetching YouTube videos: {e}")
+        
+        return videos
+
+
+class TwitterNewsMonitor:
+    """Monitor Twitter/X for financial news"""
+    
+    def __init__(self, bearer_token: str = None):
+        self.bearer_token = bearer_token or os.getenv('TWITTER_BEARER_TOKEN')
+        self.client = None
+        
+        if self.bearer_token and TWITTER_AVAILABLE:
+            self.client = tweepy.Client(bearer_token=self.bearer_token)
+        
+        # Financial Twitter accounts to monitor
+        self.accounts = [
+            'moneycontrolcom',
+            'business',  # Bloomberg
+            'EconomicTimes',
+            'Reuters',
+            'CNBCTV18Live',
+            'LiveMintNews',
+            'RBI',
+            'SEBI_India',
+            'nseindia',
+            'BSEIndia'
+        ]
+        
+        # Important hashtags
+        self.hashtags = [
+            '#StockMarket',
+            '#IndianEconomy',
+            '#NSE',
+            '#BSE',
+            '#NIFTY',
+            '#SENSEX',
+            '#RBI',
+            '#SEBI',
+            '#Budget',
+            '#GDP'
+        ]
+    
+    async def get_latest_tweets(self, max_results: int = 10) -> List[Dict]:
+        """Get latest tweets from financial accounts"""
+        if not self.client:
+            return []
+        
+        tweets = []
+        
+        try:
+            # Search for recent tweets with financial hashtags
+            query = ' OR '.join(self.hashtags)
+            response = self.client.search_recent_tweets(
+                query=query,
+                max_results=max_results,
+                tweet_fields=['created_at', 'public_metrics', 'entities'],
+                expansions=['author_id'],
+                user_fields=['username', 'name']
+            )
+            
+            if response.data:
+                users = {user.id: user for user in response.includes['users']}
+                
+                for tweet in response.data:
+                    author = users.get(tweet.author_id)
+                    tweets.append({
+                        'text': tweet.text,
+                        'author': author.username if author else 'Unknown',
+                        'author_name': author.name if author else 'Unknown',
+                        'created_at': tweet.created_at.isoformat(),
+                        'likes': tweet.public_metrics['like_count'],
+                        'retweets': tweet.public_metrics['retweet_count'],
+                        'url': f"https://twitter.com/{author.username}/status/{tweet.id}" if author else ''
+                    })
+        
+        except Exception as e:
+            logger.error(f"Error fetching tweets: {e}")
+        
+        return tweets
+    
+    async def get_account_tweets(self, username: str, max_results: int = 5) -> List[Dict]:
+        """Get tweets from specific account"""
+        if not self.client:
+            return []
+        
+        try:
+            user = self.client.get_user(username=username)
+            if user.data:
+                tweets = self.client.get_users_tweets(
+                    id=user.data.id,
+                    max_results=max_results,
+                    tweet_fields=['created_at', 'public_metrics']
+                )
+                
+                if tweets.data:
+                    return [{
+                        'text': tweet.text,
+                        'author': username,
+                        'created_at': tweet.created_at.isoformat(),
+                        'likes': tweet.public_metrics['like_count'],
+                        'retweets': tweet.public_metrics['retweet_count'],
+                        'url': f"https://twitter.com/{username}/status/{tweet.id}"
+                    } for tweet in tweets.data]
+        
+        except Exception as e:
+            logger.error(f"Error fetching tweets from {username}: {e}")
+        
+        return []
+
+
+class EnhancedNewsAggregator:
+    """Enhanced news aggregator with YouTube and Twitter"""
+    
+    def __init__(self):
+        self.youtube_monitor = YouTubeNewsMonitor()
+        self.twitter_monitor = TwitterNewsMonitor()
+    
+    async def get_multimedia_news(self) -> Dict:
+        """Get news from all sources including YouTube and Twitter"""
+        news = {
+            'youtube_videos': [],
+            'tweets': [],
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Get YouTube videos
+        news['youtube_videos'] = await self.youtube_monitor.get_latest_videos()
+        
+        # Get Twitter updates
+        news['tweets'] = await self.twitter_monitor.get_latest_tweets()
+        
+        return news
+    
+    async def format_multimedia_news(self) -> str:
+        """Format multimedia news for Telegram"""
+        news = await self.get_multimedia_news()
+        
+        message = "📱 *MULTIMEDIA NEWS UPDATE*\n\n"
+        
+        # YouTube videos
+        if news['youtube_videos']:
+            message += "📺 *LATEST VIDEOS*\n\n"
+            for video in news['youtube_videos'][:5]:
+                message += f"▶️ *{video['title'][:60]}*\n"
+                message += f"📍 {video['channel']}\n"
+                message += f"🔗 [Watch]({video['url']})\n\n"
+        
+        # Twitter updates
+        if news['tweets']:
+            message += "\n🐦 *TWITTER UPDATES*\n\n"
+            for tweet in news['tweets'][:5]:
+                message += f"💬 {tweet['text'][:100]}...\n"
+                message += f"👤 @{tweet['author']}\n"
+                message += f"❤️ {tweet['likes']} 🔄 {tweet['retweets']}\n"
+                message += f"🔗 [View]({tweet['url']})\n\n"
+        
+        return message
+
+
+# Export enhanced classes
+__all__ = ['YouTubeNewsMonitor', 'TwitterNewsMonitor', 'EnhancedNewsAggregator']
