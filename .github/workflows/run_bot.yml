@@ -1,23 +1,24 @@
-name: Ultimate Advisor Automated
+name: PhD Advisor Automation
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0,5,10,15,20 * * *'  # 12am, 5am, 10am... (UTC)
-    - cron: '30 2,7,12,17,22 * * *' # 2:30, 7:30, 12:30... (UTC)
+    # Triggers exactly 10 times daily (Approx. every 2h 30m)
+    - cron: '0 0,5,10,15,20 * * *'
+    - cron: '30 2,7,12,17,22 * * *'
 
 jobs:
-  run-advisor:
+  advisor_task:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Setup
+      - name: Environment Setup
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Install
-        run: pip install requests yfinance pyTelegramBotAPI
-      - name: Run
+      - name: Dependency Injection
+        run: pip install requests yfinance pyTelegramBotAPI pandas
+      - name: Execute Intelligence
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
