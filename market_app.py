@@ -4,87 +4,95 @@ import telebot
 import yfinance as yf
 from datetime import datetime
 
-# --- SYSTEM CONFIG ---
+# --- CONFIGURATION ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 NEWS_KEY = os.getenv("NEWS_API_KEY")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = telebot.TeleBot(TOKEN)
 
-def get_indian_market_depth():
-    """Deep analysis of Indian Market, FII/DII and Suspicious Moves"""
-    report = "🏛️ *INDIAN MARKET & INSTITUTIONAL FLOWS*\n"
+# File to store IDs of news already sent
+DB_FILE = "sent_news.txt"
+
+def load_sent_news():
+    if not os.path.exists(DB_FILE): return set()
+    with open(DB_FILE, "r") as f:
+        return set(line.strip() for line in f)
+
+def save_sent_news(news_id):
+    with open(DB_FILE, "a") as f:
+        f.write(f"{news_id}\n")
+
+def get_market_deep_analysis():
+    report = "🏛️ *DEEP MARKET INTELLIGENCE*\n"
     try:
-        # Nifty & Bank Nifty Deep Data
+        # Nifty Analysis
         nifty = yf.Ticker("^NSEI").history(period="5d")
         price = nifty['Close'].iloc[-1]
+        change = ((price - nifty['Close'].iloc[-2]) / nifty['Close'].iloc[-2]) * 100
+        
+        # FII/DII/Suspicious Detection
         vol_today = nifty['Volume'].iloc[-1]
         avg_vol = nifty['Volume'].iloc[:-1].mean()
         
-        report += f"• *Nifty 50*: {price:,.2f}\n"
+        report += f"• *Nifty 50*: {price:,.2f} ({change:+.2f}%)\n"
+        if vol_today > avg_vol * 1.5:
+            report += "⚠️ *SUSPICIOUS:* Volume is 50% above average. Huge Institutional (FII/DII) activity detected!\n"
         
-        # Suspicious Movement Logic
-        if vol_today > (avg_vol * 1.4):
-            report += "⚠️ *SUSPICIOUS MOVE:* Volume is 40% higher than average. Big Institutions (FII/DII) are very active today.\n"
-        else:
-            report += "🔹 *Volume*: Normal market participation today.\n"
-            
-        # Note: FII/DII exact daily values usually come from NSE/BSE after market hours.
-        # We fetch the current sentiment based on the price action.
-        report += "💼 *Institutional Tone*: FIIs remain cautious due to global bond yields, while DIIs are supporting the 25,000 Nifty levels.\n"
-    except Exception:
-        report += "• Market data currently refreshing...\n"
+        # USD/INR and Gold
+        inr = yf.Ticker("INR=X").history(period="1d")['Close'].iloc[-1]
+        gold = yf.Ticker("GC=F").history(period="1d")['Close'].iloc[-1]
+        report += f"• *USD/INR*: ₹{inr:.2f} | *Gold*: ${gold:,.2f}\n"
+    except: report += "Market data refreshing...\n"
     return report
 
-def get_elaborate_news():
-    """Detailed paragraphs for AI, FinTech, Geopolitics from Bloomberg/Moneycontrol"""
-    # Combined search for all your requested topics
-    query = "(site:moneycontrol.com OR site:bloomberg.com) AND (AI OR FinTech OR Geopolitics OR 'Indian Economy' OR Commodities OR Derivatives)"
-    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=4&apiKey={NEWS_KEY}"
+def get_30_fresh_news():
+    sent_ids = load_sent_news()
+    # Broad query for Bloomberg, Moneycontrol, AI, Finance, etc.
+    query = "(site:bloomberg.com OR site:moneycontrol.com OR site:reuters.com) AND (AI OR FinTech OR Geopolitics OR 'Stock Market')"
+    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=60&apiKey={NEWS_KEY}"
     
+    news_list = []
     try:
-        data = requests.get(url).json()
-        articles = data.get("articles", [])
-        news_section = "\n🌍 *DEEP INTELLIGENCE (Bloomberg & Moneycontrol)*"
-        
+        articles = requests.get(url).json().get("articles", [])
         for a in articles:
-            source = a['source']['name'].upper()
-            title = a['title']
-            # Elaborate Description (The "Deep Info")
-            description = a.get('description', 'Detailed analysis is being compiled.')
-            news_section += f"\n\n📍 *{source}: {title}*\n_{description}_"
-        return news_section
-    except:
-        return "\n🌍 News engine is gathering elaborate reports..."
+            news_id = a.get('url') # Using URL as a unique ID
+            if news_id not in sent_ids and len(news_list) < 30:
+                title = a['title']
+                desc = a.get('description', 'Detailed analysis coming soon...')
+                source = a['source']['name']
+                
+                news_list.append(f"📌 *{source}*: {title}\n_{desc}_")
+                save_sent_news(news_id) # Mark as sent
+        
+        if not news_list: return ["\n✅ No new 'Big News' in the last hour. All news is up to date."]
+        return news_list
+    except: return ["News engine is updating..."]
 
-def get_global_advisor_note():
-    # Advisor section covering Gold, USD, and Global Tech
-    try:
-        gold = yf.Ticker("GC=F").history(period="1d")['Close'].iloc[-1]
-        usdinr = yf.Ticker("INR=X").history(period="1d")['Close'].iloc[-1]
-        note = f"\n\n📈 *GLOBAL & CURRENCY*\n• Gold: ${gold:,.2f}\n• USD/INR: ₹{usdinr:.2f}\n"
-    except: note = ""
+def send_elaborate_briefing():
+    # Telegram limit is 4096 characters. We split 30 news items into multiple messages.
+    header = f"🤵 *OFFICIAL ADVISOR BRIEFING* ({datetime.now().strftime('%H:%M IST')})\n\n"
+    market_data = get_market_deep_analysis()
     
-    note += "\n💡 *FINANCIAL ADVISOR NOTE*\n_Strategy: Market shows suspicious strength in Bank Nifty. AI and Health sectors in India are getting big funding. Advice: Keep tracking FII selling. Don't take big risks in Derivatives today._"
-    return note
-
-def send_full_advisor_report():
-    header = f"🤵 *YOUR FINANCIAL ADVISOR* ({datetime.now().strftime('%H:%M IST')})\n\n"
-    full_msg = header + get_indian_market_depth() + get_elaborate_news() + get_global_advisor_note()
+    bot.send_message(CHAT_ID, header + market_data, parse_mode="Markdown")
     
-    # Send to your Telegram
-    bot.send_message(CHAT_ID, full_msg, parse_mode="Markdown")
+    news_items = get_30_fresh_news()
+    # Sending news in chunks to avoid character limit errors
+    current_chunk = "🌍 *ELABORATE SECTOR ANALYSIS*\n"
+    for i, item in enumerate(news_items, 1):
+        if len(current_chunk + item) > 3800:
+            bot.send_message(CHAT_ID, current_chunk, parse_mode="Markdown")
+            current_chunk = ""
+        current_chunk += f"\n{i}. {item}\n"
+    
+    if current_chunk:
+        bot.send_message(CHAT_ID, current_chunk, parse_mode="Markdown")
 
-# --- 24/7 INTERACTIVE MODE ---
 @bot.message_handler(func=lambda m: True)
-def handle_user_message(message):
-    bot.reply_to(message, "🔍 Scanning Indian Markets, Bloomberg and X for big news... Please wait.")
-    send_full_advisor_report()
+def on_user_query(message):
+    bot.reply_to(message, "⚙️ Analyzing FII/DII data and Bloomberg reports... compiling your 30-news briefing.")
+    send_elaborate_briefing()
 
 if __name__ == "__main__":
-    # If run via GitHub Actions
-    if os.getenv("GITHUB_ACTIONS"):
-        send_full_briefing()
-    else:
-        # Run on PythonAnywhere for 24/7 respond-anytime mode
-        print("Advisor is active 24/7...")
+    send_elaborate_briefing()
+    if not os.getenv("GITHUB_ACTIONS"):
         bot.infinity_polling()
