@@ -1,23 +1,24 @@
-name: Deep Advisor Automated
+name: Financial Advisor Automated
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0,5,10,15,20 * * *'  # Hours 1, 6, 11, 16, 21 IST
-    - cron: '30 2,7,12,17,22 * * *' # Hours 3, 8, 13, 18, 23 IST
+    # Triggers every 2.5 hours throughout the day
+    - cron: '0 0,5,10,15,20 * * *'
+    - cron: '30 2,7,12,17,22 * * *'
 
 jobs:
-  advisor:
+  run-advisor:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Setup
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
       - name: Install
         run: pip install requests yfinance pyTelegramBotAPI
-      - name: Run
+      - name: Execute
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
