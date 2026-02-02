@@ -1,16 +1,23 @@
-name: Master Financial Advisor Bot
+name: Market Advisor Bot - Twice Daily + Breaking News
 
 on:
   schedule:
-    # Run every 4-5 hours throughout the day
-    - cron: '0 0,5,10,15,20 * * *'     # 12am, 5am, 10am, 3pm, 8pm UTC
-    - cron: '30 2,7,12,17,22 * * *'     # 2:30am, 7:30am, 12:30pm, 5:30pm, 10:30pm UTC
-  workflow_dispatch:  # Allow manual trigger
+    # MAIN UPDATES - TWICE DAILY
+    # Morning Update: 3:30 AM UTC = 9:00 AM IST
+    - cron: '30 3 * * *'
+    
+    # Evening Update: 12:30 PM UTC = 6:00 PM IST
+    - cron: '30 12 * * *'
+    
+    # BREAKING NEWS CHECK - Every 2 hours during market hours
+    - cron: '0 4,6,8,10,12 * * 1-5'  # 9:30 AM to 6:00 PM IST on weekdays
+    
+  workflow_dispatch:  # Manual trigger anytime
   push:
     branches: [ main, master ]
 
 jobs:
-  run-financial-advisor:
+  run-market-advisor:
     runs-on: ubuntu-latest
     
     steps:
@@ -35,13 +42,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Run Financial Advisor Bot
+      - name: Run Market Advisor Bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           GITHUB_ACTIONS: "true"
         run: |
-          echo "Starting Master Financial Advisor Bot..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🤵 Market Advisor Bot"
+          echo "📅 $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Starting market analysis..."
           python market_app.py
-          echo "Bot execution completed!"
+          echo ""
+          echo "✅ Execution completed!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
