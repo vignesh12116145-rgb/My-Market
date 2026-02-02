@@ -12,7 +12,7 @@ bot = telebot.TeleBot(TOKEN)
 DB_FILE = "sent_news.txt"
 BREAKING_NEWS_FILE = "breaking_news.txt"
 
-# Enhanced News Sources - X, YouTube, MoneyControl, Mint, Bloomberg
+# Enhanced News Sources
 NEWS_SOURCES = {
     'moneycontrol': [
         'https://www.moneycontrol.com/rss/latestnews.xml',
@@ -52,7 +52,8 @@ def get_market_status():
         for symbol, name in indian_indices.items():
             try:
                 idx = yf.Ticker(symbol)
-                hist = idx.history(period="2d")
+                hist = idx.history(period="5d")
+                
                 if len(hist) >= 2:
                     current = hist['Close'].iloc[-1]
                     prev = hist['Close'].iloc[-2]
@@ -60,8 +61,12 @@ def get_market_status():
                     
                     emoji = "🟢" if change >= 0 else "🔴"
                     status += f"{emoji} *{name}*: ₹{current:,.2f} ({change:+.2f}%)\n"
-            except:
-                continue
+                elif len(hist) == 1:
+                    current = hist['Close'].iloc[-1]
+                    status += f"• *{name}*: ₹{current:,.2f}\n"
+            except Exception as e:
+                print(f"Error fetching {name}: {e}")
+                status += f"• *{name}*: Updating...\n"
         
         status += "\n"
         
@@ -80,19 +85,20 @@ def get_market_status():
         for symbol, name in global_indices.items():
             try:
                 idx = yf.Ticker(symbol)
-                hist = idx.history(period="2d")
-                if len(hist) >= 1:
+                hist = idx.history(period="5d")
+                
+                if len(hist) >= 2:
                     current = hist['Close'].iloc[-1]
-                    if len(hist) >= 2:
-                        prev = hist['Close'].iloc[-2]
-                        change = ((current - prev) / prev) * 100
-                    else:
-                        change = 0
+                    prev = hist['Close'].iloc[-2]
+                    change = ((current - prev) / prev) * 100
                     
                     emoji = "🟢" if change >= 0 else "🔴"
                     status += f"{emoji} *{name}*: {current:,.2f} ({change:+.2f}%)\n"
-            except:
-                continue
+                elif len(hist) == 1:
+                    current = hist['Close'].iloc[-1]
+                    status += f"• *{name}*: {current:,.2f}\n"
+            except Exception as e:
+                print(f"Error fetching {name}: {e}")
         
         status += "\n"
         
@@ -108,19 +114,20 @@ def get_market_status():
         for symbol, name in currencies.items():
             try:
                 curr = yf.Ticker(symbol)
-                hist = curr.history(period="2d")
-                if len(hist) >= 1:
+                hist = curr.history(period="5d")
+                
+                if len(hist) >= 2:
                     current = hist['Close'].iloc[-1]
-                    if len(hist) >= 2:
-                        prev = hist['Close'].iloc[-2]
-                        change = ((current - prev) / prev) * 100
-                    else:
-                        change = 0
+                    prev = hist['Close'].iloc[-2]
+                    change = ((current - prev) / prev) * 100
                     
                     emoji = "🟢" if change >= 0 else "🔴"
                     status += f"{emoji} *{name}*: ₹{current:.2f} ({change:+.2f}%)\n"
-            except:
-                continue
+                elif len(hist) == 1:
+                    current = hist['Close'].iloc[-1]
+                    status += f"• *{name}*: ₹{current:.2f}\n"
+            except Exception as e:
+                print(f"Error fetching {name}: {e}")
         
         status += "\n"
         
@@ -137,29 +144,30 @@ def get_market_status():
         for symbol, name in commodities.items():
             try:
                 comm = yf.Ticker(symbol)
-                hist = comm.history(period="2d")
-                if len(hist) >= 1:
+                hist = comm.history(period="5d")
+                
+                if len(hist) >= 2:
                     current = hist['Close'].iloc[-1]
-                    if len(hist) >= 2:
-                        prev = hist['Close'].iloc[-2]
-                        change = ((current - prev) / prev) * 100
-                    else:
-                        change = 0
+                    prev = hist['Close'].iloc[-2]
+                    change = ((current - prev) / prev) * 100
                     
                     emoji = "🟢" if change >= 0 else "🔴"
                     status += f"{emoji} *{name}*: ${current:,.2f} ({change:+.2f}%)\n"
-            except:
-                continue
+                elif len(hist) == 1:
+                    current = hist['Close'].iloc[-1]
+                    status += f"• *{name}*: ${current:,.2f}\n"
+            except Exception as e:
+                print(f"Error fetching {name}: {e}")
         
         status += "\n"
         
-        # === DERIVATIVES & OPTIONS INSIGHTS ===
+        # === INDEX PERFORMANCE ===
         status += "📈 *INDEX PERFORMANCE*\n"
         
-        # NIFTY Performance Summary
         try:
             nifty = yf.Ticker("^NSEI")
             hist = nifty.history(period="5d")
+            
             if len(hist) >= 5:
                 week_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
                 high = hist['High'].max()
@@ -167,11 +175,13 @@ def get_market_status():
                 
                 status += f"• NIFTY 50 (5-day): {week_change:+.2f}%\n"
                 status += f"  Week High: ₹{high:,.2f} | Low: ₹{low:,.2f}\n"
-        except:
-            pass
+        except Exception as e:
+            print(f"Error fetching performance: {e}")
+            status += "• Performance data updating...\n"
         
     except Exception as e:
-        status += f"⚠️ Some market data is updating...\n"
+        print(f"Market status error: {e}")
+        status += "\n⚠️ Some market data is currently updating. Please check again in a few minutes.\n"
     
     return status
 
@@ -184,11 +194,12 @@ def fetch_rss_headlines(feed_url, source_name):
             title = entry.get('title', 'No Title')
             link = entry.get('link', '')
             
-            headlines.append({
-                'title': title,
-                'link': link,
-                'source': source_name
-            })
+            if title and link:
+                headlines.append({
+                    'title': title,
+                    'link': link,
+                    'source': source_name
+                })
     except Exception as e:
         print(f"Error fetching {source_name}: {e}")
     
@@ -326,8 +337,8 @@ def check_breaking_news():
 def send_full_briefing():
     """Send comprehensive twice-daily market briefing"""
     try:
-        # Determine time of day - Morning or Evening
-        current_hour = datetime.utcnow().hour  # UTC time
+        # Determine time of day
+        current_hour = datetime.utcnow().hour
         
         if current_hour <= 6:
             time_label = "Morning"
@@ -342,37 +353,46 @@ def send_full_briefing():
         header += f"\n{greeting}\n"
         header += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        # 2. Market Status
-        market_msg = header + get_market_status()
-        bot.send_message(CHAT_ID, market_msg, parse_mode="Markdown")
-        time.sleep(2)
+        # 2. Market Status - Send as separate message to ensure it's visible
+        print("Fetching market data...")
+        market_data = get_market_status()
+        full_market_msg = header + market_data
+        
+        print(f"Sending market message (length: {len(full_market_msg)} chars)")
+        bot.send_message(CHAT_ID, full_market_msg, parse_mode="Markdown")
+        print("Market message sent successfully!")
+        time.sleep(3)
         
         # 3. News Headlines
         bot.send_message(CHAT_ID, "📰 *Getting latest headlines...*", parse_mode="Markdown")
+        time.sleep(1)
         
+        print("Fetching news headlines...")
         all_headlines = get_news_headlines()
+        print(f"Found {len(all_headlines)} headlines")
         
         if not all_headlines:
             bot.send_message(CHAT_ID, "✅ No new headlines since last update.", parse_mode="Markdown")
-            return
+        else:
+            # Send headlines in chunks of 10
+            for i in range(0, len(all_headlines), 10):
+                chunk = "\n\n".join(all_headlines[i:i+10])
+                chunk_header = f"📰 *NEWS HEADLINES ({i+1}-{min(i+10, len(all_headlines))})*\n\n"
+                bot.send_message(CHAT_ID, chunk_header + chunk, parse_mode="Markdown", disable_web_page_preview=True)
+                time.sleep(2)
+            
+            # 4. Summary
+            summary = f"\n✅ *{time_label} Update Complete*\n"
+            summary += f"📊 Markets: Indian, Global, Currencies, Commodities\n"
+            summary += f"📰 Headlines: {len(all_headlines)} news articles\n"
+            summary += f"🔔 Next update: {'Evening (6 PM IST)' if time_label == 'Morning' else 'Tomorrow Morning (9 AM IST)'}\n"
+            summary += f"\n_Breaking news will be sent immediately if detected._"
+            bot.send_message(CHAT_ID, summary, parse_mode="Markdown")
         
-        # Send headlines in chunks of 10
-        for i in range(0, len(all_headlines), 10):
-            chunk = "\n\n".join(all_headlines[i:i+10])
-            chunk_header = f"📰 *NEWS HEADLINES ({i+1}-{min(i+10, len(all_headlines))})*\n\n"
-            bot.send_message(CHAT_ID, chunk_header + chunk, parse_mode="Markdown", disable_web_page_preview=True)
-            time.sleep(2)
-        
-        # 4. Summary
-        summary = f"\n\n✅ *{time_label} Update Complete*\n"
-        summary += f"📊 Markets: Indian, Global, Currencies, Commodities\n"
-        summary += f"📰 Headlines: {len(all_headlines)} news articles\n"
-        summary += f"🔔 Next update: {'Evening (6 PM IST)' if time_label == 'Morning' else 'Tomorrow Morning (9 AM IST)'}\n"
-        summary += f"\n_Breaking news will be sent immediately if detected._"
-        bot.send_message(CHAT_ID, summary, parse_mode="Markdown")
+        print("Briefing completed successfully!")
         
     except Exception as e:
-        error_msg = f"⚠️ Error: {str(e)[:150]}"
+        error_msg = f"⚠️ Error in briefing: {str(e)[:200]}"
         print(error_msg)
         try:
             bot.send_message(CHAT_ID, error_msg, parse_mode="Markdown")
@@ -381,10 +401,14 @@ def send_full_briefing():
 
 def send_breaking_news_alert():
     """Send immediate alert for breaking news"""
+    print("Checking for breaking news...")
     breaking = check_breaking_news()
     
     if not breaking:
+        print("No breaking news found.")
         return
+    
+    print(f"Found {len(breaking)} breaking news items")
     
     for news in breaking:
         try:
@@ -415,31 +439,42 @@ def on_message(message):
 # === MAIN EXECUTION ===
 if __name__ == "__main__":
     print(f"[{datetime.now()}] Starting Market Advisor Bot...")
+    print(f"Bot Token: {'Present' if TOKEN else 'MISSING'}")
+    print(f"Chat ID: {'Present' if CHAT_ID else 'MISSING'}")
+    print(f"News API Key: {'Present' if NEWS_KEY else 'MISSING'}")
     
     # Check if running in GitHub Actions
     is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
+    print(f"Running in GitHub Actions: {is_github_actions}")
     
     try:
         if is_github_actions:
             # In GitHub Actions - send scheduled update
+            print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("Running scheduled update...")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+            
             send_full_briefing()
             
-            # Also check for breaking news
+            print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("Checking for breaking news...")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+            
             send_breaking_news_alert()
             
-            print(f"[{datetime.now()}] Update sent successfully!")
+            print(f"\n[{datetime.now()}] ✅ All tasks completed successfully!")
         else:
             # Running locally - start bot polling
+            print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("Starting bot in polling mode...")
             print("Send any message to the bot to get update")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
             bot.infinity_polling()
             
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"\n❌ Error: {e}")
         if CHAT_ID:
             try:
-                bot.send_message(CHAT_ID, f"⚠️ Bot error: {str(e)[:150]}", parse_mode="Markdown")
+                bot.send_message(CHAT_ID, f"⚠️ Bot error: {str(e)[:200]}", parse_mode="Markdown")
             except:
                 pass
