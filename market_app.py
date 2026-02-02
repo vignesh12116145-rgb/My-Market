@@ -10,13 +10,19 @@ NEWS_KEY = os.getenv("NEWS_API_KEY")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = telebot.TeleBot(TOKEN)
 DB_FILE = "sent_news.txt"
+BREAKING_NEWS_FILE = "breaking_news.txt"
 
-# Enhanced News Sources with RSS feeds for deeper coverage
+# Enhanced News Sources - X, YouTube, MoneyControl, Mint, Bloomberg
 NEWS_SOURCES = {
     'moneycontrol': [
         'https://www.moneycontrol.com/rss/latestnews.xml',
         'https://www.moneycontrol.com/rss/marketreports.xml',
         'https://www.moneycontrol.com/rss/business.xml'
+    ],
+    'mint': [
+        'https://www.livemint.com/rss/markets',
+        'https://www.livemint.com/rss/companies',
+        'https://www.livemint.com/rss/money'
     ],
     'bloomberg': [
         'https://feeds.bloomberg.com/markets/news.rss',
@@ -25,81 +31,66 @@ NEWS_SOURCES = {
     ],
     'economic_times': [
         'https://economictimes.indiatimes.com/rssfeedstopstories.cms',
-        'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms',
-        'https://economictimes.indiatimes.com/tech/rssfeeds/13357270.cms'
-    ],
-    'livemint': [
-        'https://www.livemint.com/rss/markets',
-        'https://www.livemint.com/rss/companies',
-        'https://www.livemint.com/rss/money'
-    ],
-    'reuters': [
-        'https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best'
+        'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms'
     ]
 }
 
 def get_market_status():
-    """Deep Market Analysis: Indian & Global Markets, FII/DII Sentiment & Suspicious Moves"""
-    status = "🏛️ *COMPREHENSIVE MARKET & INSTITUTIONAL ANALYSIS*\n\n"
+    """Complete Market Overview - Indian, Global, Commodities, Currencies, Indices"""
+    status = "📊 *COMPLETE MARKET OVERVIEW*\n\n"
     
     try:
-        # === INDIAN MARKETS ===
+        # === INDIAN INDICES ===
         status += "🇮🇳 *INDIAN MARKETS*\n"
         
-        # NIFTY 50 with Deep Analysis
-        nifty = yf.Ticker("^NSEI")
-        nifty_hist = nifty.history(period="5d")
-        nifty_price = nifty_hist['Close'].iloc[-1]
-        nifty_change = ((nifty_price - nifty_hist['Close'].iloc[-2]) / nifty_hist['Close'].iloc[-2]) * 100
-        nifty_vol = nifty_hist['Volume'].iloc[-1]
-        nifty_avg_vol = nifty_hist['Volume'].iloc[:-1].mean()
-        vol_ratio = nifty_vol / nifty_avg_vol if nifty_avg_vol > 0 else 0
+        indian_indices = {
+            '^NSEI': 'NIFTY 50',
+            '^BSESN': 'SENSEX',
+            '^NSEBANK': 'BANK NIFTY'
+        }
         
-        status += f"• *NIFTY 50*: ₹{nifty_price:,.2f} ({nifty_change:+.2f}%)\n"
-        status += f"  Volume: {nifty_vol:,.0f} ({vol_ratio:.2f}x avg)\n"
-        
-        if vol_ratio > 1.5:
-            status += "  ⚠️ *ALERT:* Suspicious high volume! FII/DII actively trading.\n"
-        if abs(nifty_change) > 2:
-            status += f"  🚨 *BIG MOVE:* Market moved {abs(nifty_change):.2f}%!\n"
-        
-        # SENSEX
-        sensex = yf.Ticker("^BSESN")
-        sensex_hist = sensex.history(period="1d")
-        if not sensex_hist.empty:
-            sensex_price = sensex_hist['Close'].iloc[-1]
-            sensex_change = ((sensex_price - sensex_hist['Open'].iloc[-1]) / sensex_hist['Open'].iloc[-1]) * 100
-            status += f"• *SENSEX*: ₹{sensex_price:,.2f} ({sensex_change:+.2f}%)\n"
-        
-        # BANK NIFTY
-        banknifty = yf.Ticker("^NSEBANK")
-        bank_hist = banknifty.history(period="1d")
-        if not bank_hist.empty:
-            bank_price = bank_hist['Close'].iloc[-1]
-            bank_change = ((bank_price - bank_hist['Open'].iloc[-1]) / bank_hist['Open'].iloc[-1]) * 100
-            status += f"• *BANK NIFTY*: ₹{bank_price:,.2f} ({bank_change:+.2f}%)\n"
+        for symbol, name in indian_indices.items():
+            try:
+                idx = yf.Ticker(symbol)
+                hist = idx.history(period="2d")
+                if len(hist) >= 2:
+                    current = hist['Close'].iloc[-1]
+                    prev = hist['Close'].iloc[-2]
+                    change = ((current - prev) / prev) * 100
+                    
+                    emoji = "🟢" if change >= 0 else "🔴"
+                    status += f"{emoji} *{name}*: ₹{current:,.2f} ({change:+.2f}%)\n"
+            except:
+                continue
         
         status += "\n"
         
-        # === GLOBAL MARKETS ===
+        # === GLOBAL INDICES ===
         status += "🌍 *GLOBAL MARKETS*\n"
         
         global_indices = {
             '^DJI': 'DOW JONES',
             '^GSPC': 'S&P 500',
             '^IXIC': 'NASDAQ',
-            '^FTSE': 'FTSE 100',
-            '^N225': 'NIKKEI 225'
+            '^N225': 'NIKKEI 225',
+            '000001.SS': 'SSE COMPOSITE',
+            '^HSI': 'HANG SENG'
         }
         
         for symbol, name in global_indices.items():
             try:
                 idx = yf.Ticker(symbol)
-                hist = idx.history(period="1d")
-                if not hist.empty:
-                    price = hist['Close'].iloc[-1]
-                    change = ((price - hist['Open'].iloc[-1]) / hist['Open'].iloc[-1]) * 100
-                    status += f"• *{name}*: {price:,.2f} ({change:+.2f}%)\n"
+                hist = idx.history(period="2d")
+                if len(hist) >= 1:
+                    current = hist['Close'].iloc[-1]
+                    if len(hist) >= 2:
+                        prev = hist['Close'].iloc[-2]
+                        change = ((current - prev) / prev) * 100
+                    else:
+                        change = 0
+                    
+                    emoji = "🟢" if change >= 0 else "🔴"
+                    status += f"{emoji} *{name}*: {current:,.2f} ({change:+.2f}%)\n"
             except:
                 continue
         
@@ -108,203 +99,176 @@ def get_market_status():
         # === CURRENCIES ===
         status += "💱 *CURRENCIES*\n"
         
-        try:
-            usd_inr = yf.Ticker("INR=X").history(period="1d")
-            if not usd_inr.empty:
-                inr_rate = usd_inr['Close'].iloc[-1]
-                inr_change = ((inr_rate - usd_inr['Open'].iloc[-1]) / usd_inr['Open'].iloc[-1]) * 100
-                status += f"• *USD/INR*: ₹{inr_rate:.2f} ({inr_change:+.2f}%)\n"
-        except:
-            pass
+        currencies = {
+            'INR=X': 'USD/INR',
+            'EURINR=X': 'EUR/INR',
+            'GBPINR=X': 'GBP/INR'
+        }
         
-        try:
-            eur_usd = yf.Ticker("EURUSD=X").history(period="1d")
-            if not eur_usd.empty:
-                eur_rate = eur_usd['Close'].iloc[-1]
-                status += f"• *EUR/USD*: ${eur_rate:.4f}\n"
-        except:
-            pass
+        for symbol, name in currencies.items():
+            try:
+                curr = yf.Ticker(symbol)
+                hist = curr.history(period="2d")
+                if len(hist) >= 1:
+                    current = hist['Close'].iloc[-1]
+                    if len(hist) >= 2:
+                        prev = hist['Close'].iloc[-2]
+                        change = ((current - prev) / prev) * 100
+                    else:
+                        change = 0
+                    
+                    emoji = "🟢" if change >= 0 else "🔴"
+                    status += f"{emoji} *{name}*: ₹{current:.2f} ({change:+.2f}%)\n"
+            except:
+                continue
         
         status += "\n"
         
         # === COMMODITIES ===
-        status += "🛢️ *COMMODITIES*\n"
+        status += "🥇 *COMMODITIES*\n"
         
         commodities = {
             'GC=F': 'GOLD',
             'SI=F': 'SILVER',
-            'CL=F': 'CRUDE OIL',
-            'BZ=F': 'BRENT CRUDE'
+            'HG=F': 'COPPER',
+            'CL=F': 'CRUDE OIL'
         }
         
         for symbol, name in commodities.items():
             try:
                 comm = yf.Ticker(symbol)
-                hist = comm.history(period="1d")
-                if not hist.empty:
-                    price = hist['Close'].iloc[-1]
-                    change = ((price - hist['Open'].iloc[-1]) / hist['Open'].iloc[-1]) * 100
-                    status += f"• *{name}*: ${price:,.2f} ({change:+.2f}%)\n"
-            except:
-                continue
-        
-        status += "\n"
-        
-        # === SUSPICIOUS MOVEMENTS DETECTION ===
-        status += "🔍 *SUSPICIOUS ACTIVITY MONITOR*\n"
-        
-        # Check top Indian stocks for unusual movements
-        top_stocks = ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS']
-        alerts = []
-        
-        for stock_symbol in top_stocks:
-            try:
-                stock = yf.Ticker(stock_symbol)
-                stock_hist = stock.history(period="5d")
-                if len(stock_hist) > 1:
-                    stock_price = stock_hist['Close'].iloc[-1]
-                    stock_change = ((stock_price - stock_hist['Close'].iloc[-2]) / stock_hist['Close'].iloc[-2]) * 100
-                    stock_vol = stock_hist['Volume'].iloc[-1]
-                    stock_avg_vol = stock_hist['Volume'].iloc[:-1].mean()
-                    stock_vol_ratio = stock_vol / stock_avg_vol if stock_avg_vol > 0 else 0
+                hist = comm.history(period="2d")
+                if len(hist) >= 1:
+                    current = hist['Close'].iloc[-1]
+                    if len(hist) >= 2:
+                        prev = hist['Close'].iloc[-2]
+                        change = ((current - prev) / prev) * 100
+                    else:
+                        change = 0
                     
-                    # Alert on big movements or volume spikes
-                    if abs(stock_change) > 3 or stock_vol_ratio > 2:
-                        stock_name = stock_symbol.replace('.NS', '')
-                        alerts.append(f"⚠️ *{stock_name}*: {stock_change:+.2f}% (Vol: {stock_vol_ratio:.1f}x)")
+                    emoji = "🟢" if change >= 0 else "🔴"
+                    status += f"{emoji} *{name}*: ${current:,.2f} ({change:+.2f}%)\n"
             except:
                 continue
         
-        if alerts:
-            status += "\n".join(alerts) + "\n"
-        else:
-            status += "✅ No unusual activity detected in top stocks.\n"
-        
         status += "\n"
         
-        # === FII/DII INDICATOR ===
-        status += "💼 *FII/DII SENTIMENT INDICATOR*\n"
-        # Based on market breadth and volume
-        if vol_ratio > 1.3:
-            if nifty_change > 0:
-                status += "📈 *Strong Buying Pressure* - Likely FII/DII accumulation\n"
-            else:
-                status += "📉 *Heavy Selling* - Possible FII/DII distribution\n"
-        else:
-            status += "➡️ *Normal Activity* - Wait for clearer signals\n"
+        # === DERIVATIVES & OPTIONS INSIGHTS ===
+        status += "📈 *INDEX PERFORMANCE*\n"
+        
+        # NIFTY Performance Summary
+        try:
+            nifty = yf.Ticker("^NSEI")
+            hist = nifty.history(period="5d")
+            if len(hist) >= 5:
+                week_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                high = hist['High'].max()
+                low = hist['Low'].min()
+                
+                status += f"• NIFTY 50 (5-day): {week_change:+.2f}%\n"
+                status += f"  Week High: ₹{high:,.2f} | Low: ₹{low:,.2f}\n"
+        except:
+            pass
         
     except Exception as e:
-        status += f"⚠️ Market data updating... ({str(e)[:50]})\n"
+        status += f"⚠️ Some market data is updating...\n"
     
     return status
 
-def fetch_rss_news(feed_url, source_name):
-    """Fetch detailed news from RSS feeds"""
-    articles = []
+def fetch_rss_headlines(feed_url, source_name):
+    """Fetch headlines only from RSS feeds"""
+    headlines = []
     try:
         feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:5]:  # Top 5 from each feed
-            # Get full description/content
-            description = entry.get('description', entry.get('summary', ''))
-            # Clean HTML tags
-            if description:
-                soup = BeautifulSoup(description, 'html.parser')
-                description = soup.get_text()[:500]  # First 500 chars for elaborate info
-            
+        for entry in feed.entries[:10]:
             title = entry.get('title', 'No Title')
             link = entry.get('link', '')
             
-            articles.append({
+            headlines.append({
                 'title': title,
-                'description': description,
                 'link': link,
-                'source': source_name,
-                'published': entry.get('published', '')
+                'source': source_name
             })
     except Exception as e:
         print(f"Error fetching {source_name}: {e}")
     
-    return articles
+    return headlines
 
-def get_30_elaborate_news():
-    """Fetches 30+ detailed insights from Moneycontrol, Bloomberg, etc. + NewsAPI"""
+def get_news_headlines():
+    """Get 30-40 headlines from all sources"""
     if not os.path.exists(DB_FILE): 
         open(DB_FILE, 'w').close()
     
     with open(DB_FILE, "r") as f: 
         sent_ids = set(f.read().splitlines())
 
-    all_news = []
+    all_headlines = []
     
-    # === METHOD 1: RSS FEEDS (Better for elaborate content) ===
+    # === RSS FEEDS - MoneyControl, Mint, Bloomberg ===
     for source_type, feeds in NEWS_SOURCES.items():
         for feed_url in feeds:
-            articles = fetch_rss_news(feed_url, source_type.upper())
-            all_news.extend(articles)
-            time.sleep(0.5)  # Rate limiting
+            headlines = fetch_rss_headlines(feed_url, source_type.upper())
+            all_headlines.extend(headlines)
+            time.sleep(0.3)
     
-    # === METHOD 2: NewsAPI (For additional coverage) ===
+    # === NewsAPI - FinTech, Derivatives, Financial News ===
     if NEWS_KEY:
         try:
-            # Comprehensive query covering all requested topics
             queries = [
-                "(AI OR artificial intelligence) AND (finance OR fintech)",
-                "(FII OR DII) AND india",
-                "derivatives AND (india OR NSE OR BSE)",
-                "geopolitics AND (market OR economy)",
-                "(moneycontrol OR bloomberg) AND stocks",
-                "health AND (pharma OR healthcare OR biotech)",
-                "commodities AND (gold OR oil OR silver)",
-                "cryptocurrency AND (bitcoin OR ethereum)",
-                "RBI OR SEBI OR monetary policy",
-                "IPO OR stock market india"
+                "fintech AND india",
+                "derivatives OR futures OR options",
+                "nifty OR sensex",
+                "stock market india",
+                "RBI OR SEBI",
+                "financial technology",
+                "gold silver commodities",
+                "foreign exchange forex"
             ]
             
             for query in queries:
-                url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&language=en&apiKey={NEWS_KEY}"
+                url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=5&language=en&apiKey={NEWS_KEY}"
                 response = requests.get(url, timeout=10)
                 
                 if response.status_code == 200:
                     data = response.json()
                     for article in data.get('articles', []):
-                        all_news.append({
+                        all_headlines.append({
                             'title': article.get('title', ''),
-                            'description': article.get('description', article.get('content', ''))[:500],
                             'link': article.get('url', ''),
-                            'source': article.get('source', {}).get('name', 'NEWS'),
-                            'published': article.get('publishedAt', '')
+                            'source': article.get('source', {}).get('name', 'NEWS')
                         })
                 
-                time.sleep(0.5)  # Rate limiting
+                time.sleep(0.4)
         except Exception as e:
             print(f"NewsAPI error: {e}")
     
-    # === FILTER & FORMAT ===
+    # === FORMAT HEADLINES ONLY ===
     news_items = []
-    for article in all_news:
-        url = article['link']
+    count = 1
+    
+    for headline in all_headlines:
+        url = headline['link']
         
         # Skip if already sent
         if url in sent_ids:
             continue
         
-        # Skip if no description (we want elaborate info)
-        if not article['description'] or len(article['description']) < 50:
+        # Skip if no title
+        if not headline['title'] or len(headline['title']) < 10:
             continue
         
-        if len(news_items) >= 30:
+        # Stop at 40 headlines
+        if len(news_items) >= 40:
             break
         
-        # Format with elaborate details
-        source = article['source'].upper()
-        title = article['title'][:150]
-        desc = article['description'][:400]
+        source = headline['source'].upper()
+        title = headline['title']
         
-        formatted = f"📌 *{source}*: *{title}*\n\n"
-        formatted += f"_{desc}_\n\n"
-        formatted += f"🔗 [Read Full Article]({url})"
+        # Simple headline format with numbering
+        formatted = f"{count}. *{source}*: {title}\n🔗 [Read]({url})"
         
         news_items.append(formatted)
+        count += 1
         
         # Mark as sent
         with open(DB_FILE, "a") as f: 
@@ -312,72 +276,170 @@ def get_30_elaborate_news():
     
     return news_items
 
+def check_breaking_news():
+    """Check for breaking news and send immediately"""
+    if not os.path.exists(BREAKING_NEWS_FILE):
+        open(BREAKING_NEWS_FILE, 'w').close()
+    
+    with open(BREAKING_NEWS_FILE, "r") as f:
+        sent_breaking = set(f.read().splitlines())
+    
+    breaking_keywords = [
+        'breaking', 'urgent', 'alert', 'emergency', 
+        'crash', 'surge', 'plunge', 'soar',
+        'rbi announcement', 'sebi action', 'emergency meeting',
+        'market halt', 'circuit breaker', 'trading suspended'
+    ]
+    
+    breaking_news = []
+    
+    # Check NewsAPI for breaking news
+    if NEWS_KEY:
+        try:
+            query = "india AND (stock market OR economy OR RBI OR SEBI)"
+            url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&language=en&apiKey={NEWS_KEY}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                for article in data.get('articles', [])[:10]:
+                    title_lower = article.get('title', '').lower()
+                    url = article.get('url', '')
+                    
+                    # Check if breaking news
+                    if any(keyword in title_lower for keyword in breaking_keywords):
+                        if url not in sent_breaking:
+                            breaking_news.append({
+                                'title': article.get('title', ''),
+                                'description': article.get('description', '')[:300],
+                                'url': url,
+                                'source': article.get('source', {}).get('name', 'NEWS')
+                            })
+                            
+                            with open(BREAKING_NEWS_FILE, "a") as f:
+                                f.write(url + "\n")
+        except:
+            pass
+    
+    return breaking_news
+
 def send_full_briefing():
-    """Send comprehensive market briefing"""
+    """Send comprehensive twice-daily market briefing"""
     try:
-        # 1. Header with timestamp
-        header = f"🤵 *MASTER FINANCIAL ADVISOR - COMPREHENSIVE UPDATE*\n"
-        header += f"📅 {datetime.now().strftime('%d %B %Y, %H:%M IST')}\n"
+        # Determine time of day - Morning or Evening
+        current_hour = datetime.utcnow().hour  # UTC time
+        
+        if current_hour <= 6:
+            time_label = "Morning"
+            greeting = "Good Morning! Here is your market update."
+        else:
+            time_label = "Evening"
+            greeting = "Good Evening! Here is your market closing summary."
+        
+        # 1. Header
+        header = f"🤵 *{time_label.upper()} MARKET UPDATE*\n"
+        header += f"📅 {datetime.now().strftime('%d %B %Y, %I:%M %p IST')}\n"
+        header += f"\n{greeting}\n"
         header += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        # 2. Market Status (Deep Analysis)
+        # 2. Market Status
         market_msg = header + get_market_status()
         bot.send_message(CHAT_ID, market_msg, parse_mode="Markdown")
         time.sleep(2)
         
-        # 3. Detailed News (30+ articles with elaborate info)
-        bot.send_message(CHAT_ID, "📰 *Fetching detailed news from all sources...*", parse_mode="Markdown")
+        # 3. News Headlines
+        bot.send_message(CHAT_ID, "📰 *Getting latest headlines...*", parse_mode="Markdown")
         
-        all_news = get_30_elaborate_news()
+        all_headlines = get_news_headlines()
         
-        if not all_news:
-            bot.send_message(CHAT_ID, "✅ *No new significant news since last update.*\n\n_All markets monitored. Will alert on breaking news._", parse_mode="Markdown")
+        if not all_headlines:
+            bot.send_message(CHAT_ID, "✅ No new headlines since last update.", parse_mode="Markdown")
             return
         
-        # Send news in chunks of 3 (to avoid telegram limits and keep it readable)
-        for i in range(0, len(all_news), 3):
-            chunk = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n".join(all_news[i:i+3])
-            chunk_header = f"🌍 *DETAILED NEWS INTELLIGENCE - Part {i//3 + 1}*\n\n"
+        # Send headlines in chunks of 10
+        for i in range(0, len(all_headlines), 10):
+            chunk = "\n\n".join(all_headlines[i:i+10])
+            chunk_header = f"📰 *NEWS HEADLINES ({i+1}-{min(i+10, len(all_headlines))})*\n\n"
             bot.send_message(CHAT_ID, chunk_header + chunk, parse_mode="Markdown", disable_web_page_preview=True)
-            time.sleep(2)  # Avoid rate limits
+            time.sleep(2)
         
         # 4. Summary
-        summary = f"\n\n✅ *Update Complete*\n"
-        summary += f"📊 Markets Analyzed: Indian, Global, Currencies, Commodities\n"
-        summary += f"📰 News Articles: {len(all_news)} detailed reports\n"
-        summary += f"🔔 Next update in ~4-5 hours\n"
+        summary = f"\n\n✅ *{time_label} Update Complete*\n"
+        summary += f"📊 Markets: Indian, Global, Currencies, Commodities\n"
+        summary += f"📰 Headlines: {len(all_headlines)} news articles\n"
+        summary += f"🔔 Next update: {'Evening (6 PM IST)' if time_label == 'Morning' else 'Tomorrow Morning (9 AM IST)'}\n"
+        summary += f"\n_Breaking news will be sent immediately if detected._"
         bot.send_message(CHAT_ID, summary, parse_mode="Markdown")
         
     except Exception as e:
-        error_msg = f"⚠️ *Error in briefing*: {str(e)[:200]}"
-        bot.send_message(CHAT_ID, error_msg, parse_mode="Markdown")
+        error_msg = f"⚠️ Error: {str(e)[:150]}"
+        print(error_msg)
+        try:
+            bot.send_message(CHAT_ID, error_msg, parse_mode="Markdown")
+        except:
+            pass
+
+def send_breaking_news_alert():
+    """Send immediate alert for breaking news"""
+    breaking = check_breaking_news()
+    
+    if not breaking:
+        return
+    
+    for news in breaking:
+        try:
+            alert = f"🚨 *BREAKING NEWS ALERT*\n\n"
+            alert += f"📰 *{news['source']}*\n"
+            alert += f"*{news['title']}*\n\n"
+            alert += f"{news['description']}\n\n"
+            alert += f"🔗 [Read Full Story]({news['url']})"
+            
+            bot.send_message(CHAT_ID, alert, parse_mode="Markdown", disable_web_page_preview=True)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Error sending breaking news: {e}")
 
 @bot.message_handler(func=lambda m: True)
 def on_message(message):
-    """Handle incoming messages"""
+    """Handle user messages"""
     try:
-        bot.reply_to(message, "⚙️ *Initiating comprehensive analysis...*\n\n_This includes:_\n• Market movements\n• FII/DII activity\n• Suspicious trades\n• Global indices\n• 30+ detailed news articles\n\n_Please wait 30-60 seconds..._", parse_mode="Markdown")
+        bot.reply_to(message, 
+            "⚙️ *Getting your market update...*\n\n"
+            "_This includes Indian markets, global indices, currencies, commodities, and 30-40 latest headlines._\n\n"
+            "_Please wait 30 seconds..._", 
+            parse_mode="Markdown")
         send_full_briefing()
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 # === MAIN EXECUTION ===
 if __name__ == "__main__":
-    print(f"[{datetime.now()}] Starting Master Financial Advisor Bot...")
+    print(f"[{datetime.now()}] Starting Market Advisor Bot...")
+    
+    # Check if running in GitHub Actions
+    is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
     
     try:
-        # Send briefing immediately
-        send_full_briefing()
-        print(f"[{datetime.now()}] Briefing sent successfully!")
-        
-        # If not running in GitHub Actions, start polling for user commands
-        if not os.getenv("GITHUB_ACTIONS"):
-            print("Starting bot polling for user messages...")
+        if is_github_actions:
+            # In GitHub Actions - send scheduled update
+            print("Running scheduled update...")
+            send_full_briefing()
+            
+            # Also check for breaking news
+            print("Checking for breaking news...")
+            send_breaking_news_alert()
+            
+            print(f"[{datetime.now()}] Update sent successfully!")
+        else:
+            # Running locally - start bot polling
+            print("Starting bot in polling mode...")
+            print("Send any message to the bot to get update")
             bot.infinity_polling()
+            
     except Exception as e:
         print(f"Error: {e}")
         if CHAT_ID:
             try:
-                bot.send_message(CHAT_ID, f"⚠️ Bot encountered an error: {str(e)[:200]}", parse_mode="Markdown")
+                bot.send_message(CHAT_ID, f"⚠️ Bot error: {str(e)[:150]}", parse_mode="Markdown")
             except:
                 pass
