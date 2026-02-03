@@ -1,8 +1,8 @@
 import os, requests, telebot, time
-import yfinance as yf
 from datetime import datetime, timedelta
 import feedparser
 from bs4 import BeautifulSoup
+import json
 
 # --- CONFIGURATION ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -12,7 +12,7 @@ bot = telebot.TeleBot(TOKEN)
 DB_FILE = "sent_news.txt"
 BREAKING_NEWS_FILE = "breaking_news.txt"
 
-# Current News Sources (Removed MoneyControl - shows old 2023 news)
+# Current News Sources
 NEWS_SOURCES = {
     'mint': [
         'https://www.livemint.com/rss/markets',
@@ -27,252 +27,86 @@ NEWS_SOURCES = {
     ],
     'economic_times': [
         'https://economictimes.indiatimes.com/rssfeedstopstories.cms',
-        'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms',
-        'https://economictimes.indiatimes.com/industry/rssfeeds/13352306.cms'
+        'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms'
     ],
     'reuters': [
         'https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best'
     ]
 }
 
-def get_ticker_data(symbol, retries=3):
-    """Fetch ticker data with retry logic"""
-    for attempt in range(retries):
-        try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="7d")
-            
-            if not hist.empty and len(hist) >= 1:
-                return hist
-            
-            time.sleep(1)
-            hist = ticker.history(period="1mo")
-            
-            if not hist.empty:
-                return hist
-                
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed for {symbol}: {e}")
-            if attempt < retries - 1:
-                time.sleep(2)
-    
-    return None
+# Bot command triggers
+COMMAND_TRIGGERS = {
+    'market': ['market', 'markets', 'stock', 'nifty', 'sensex'],
+    'news': ['news', 'headlines', 'update', 'latest'],
+    'help': ['help', 'commands', 'start', 'hi', 'hello'],
+    'breaking': ['breaking', 'alert', 'urgent']
+}
 
-def get_market_status():
-    """Complete Market Overview - Indian, Global, Commodities, Currencies, Indices"""
-    status = "📊 *COMPLETE MARKET OVERVIEW*\n\n"
-    
-    # === INDIAN INDICES ===
-    status += "🇮🇳 *INDIAN MARKETS*\n"
-    
-    indian_indices = {
-        '^NSEI': 'NIFTY 50',
-        '^BSESN': 'SENSEX',
-        '^NSEBANK': 'BANK NIFTY'
-    }
-    
-    indian_count = 0
-    for symbol, name in indian_indices.items():
-        try:
-            print(f"Fetching {name}...")
-            hist = get_ticker_data(symbol)
-            
-            if hist is not None and len(hist) >= 2:
-                current = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2]
-                change = ((current - prev) / prev) * 100
-                
-                emoji = "🟢" if change >= 0 else "🔴"
-                status += f"{emoji} *{name}*: ₹{current:,.2f} ({change:+.2f}%)\n"
-                indian_count += 1
-                print(f"✓ {name}: ₹{current:,.2f}")
-            else:
-                print(f"✗ {name}: No data available")
-                status += f"• *{name}*: Data updating...\n"
-        except Exception as e:
-            print(f"Error fetching {name}: {e}")
-            status += f"• *{name}*: Data updating...\n"
-        
-        time.sleep(0.5)
-    
-    if indian_count == 0:
-        status += "_Market data is currently updating. Please try again in a few minutes._\n"
-    
-    status += "\n"
-    
-    # === GLOBAL INDICES ===
-    status += "🌍 *GLOBAL MARKETS*\n"
-    
-    global_indices = {
-        '^DJI': 'DOW JONES',
-        '^GSPC': 'S&P 500',
-        '^IXIC': 'NASDAQ',
-        '^N225': 'NIKKEI 225',
-        '000001.SS': 'SSE COMPOSITE',
-        '^HSI': 'HANG SENG'
-    }
-    
-    global_count = 0
-    for symbol, name in global_indices.items():
-        try:
-            print(f"Fetching {name}...")
-            hist = get_ticker_data(symbol)
-            
-            if hist is not None and len(hist) >= 2:
-                current = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2]
-                change = ((current - prev) / prev) * 100
-                
-                emoji = "🟢" if change >= 0 else "🔴"
-                status += f"{emoji} *{name}*: {current:,.2f} ({change:+.2f}%)\n"
-                global_count += 1
-                print(f"✓ {name}: {current:,.2f}")
-            else:
-                if hist is not None and len(hist) == 1:
-                    current = hist['Close'].iloc[-1]
-                    status += f"• *{name}*: {current:,.2f}\n"
-                    global_count += 1
-        except Exception as e:
-            print(f"Error fetching {name}: {e}")
-        
-        time.sleep(0.5)
-    
-    if global_count == 0:
-        status += "_Global market data is updating..._\n"
-    
-    status += "\n"
-    
-    # === CURRENCIES ===
-    status += "💱 *CURRENCIES*\n"
-    
-    currencies = {
-        'INR=X': 'USD/INR',
-        'EURINR=X': 'EUR/INR',
-        'GBPINR=X': 'GBP/INR'
-    }
-    
-    currency_count = 0
-    for symbol, name in currencies.items():
-        try:
-            print(f"Fetching {name}...")
-            hist = get_ticker_data(symbol)
-            
-            if hist is not None and len(hist) >= 2:
-                current = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2]
-                change = ((current - prev) / prev) * 100
-                
-                emoji = "🟢" if change >= 0 else "🔴"
-                status += f"{emoji} *{name}*: ₹{current:.2f} ({change:+.2f}%)\n"
-                currency_count += 1
-                print(f"✓ {name}: ₹{current:.2f}")
-            elif hist is not None and len(hist) == 1:
-                current = hist['Close'].iloc[-1]
-                status += f"• *{name}*: ₹{current:.2f}\n"
-                currency_count += 1
-        except Exception as e:
-            print(f"Error fetching {name}: {e}")
-        
-        time.sleep(0.5)
-    
-    if currency_count == 0:
-        status += "_Currency data is updating..._\n"
-    
-    status += "\n"
-    
-    # === COMMODITIES ===
-    status += "🥇 *COMMODITIES*\n"
-    
-    commodities = {
-        'GC=F': 'GOLD',
-        'SI=F': 'SILVER',
-        'HG=F': 'COPPER',
-        'CL=F': 'CRUDE OIL'
-    }
-    
-    commodity_count = 0
-    for symbol, name in commodities.items():
-        try:
-            print(f"Fetching {name}...")
-            hist = get_ticker_data(symbol)
-            
-            if hist is not None and len(hist) >= 2:
-                current = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2]
-                change = ((current - prev) / prev) * 100
-                
-                emoji = "🟢" if change >= 0 else "🔴"
-                status += f"{emoji} *{name}*: ${current:,.2f} ({change:+.2f}%)\n"
-                commodity_count += 1
-                print(f"✓ {name}: ${current:,.2f}")
-            elif hist is not None and len(hist) == 1:
-                current = hist['Close'].iloc[-1]
-                status += f"• *{name}*: ${current:,.2f}\n"
-                commodity_count += 1
-        except Exception as e:
-            print(f"Error fetching {name}: {e}")
-        
-        time.sleep(0.5)
-    
-    if commodity_count == 0:
-        status += "_Commodity data is updating..._\n"
-    
-    status += "\n"
-    
-    # === INDEX PERFORMANCE ===
-    status += "📈 *INDEX PERFORMANCE*\n"
-    
+def get_market_data_coinmarketcap():
+    """Alternative: Get market sentiment from CoinMarketCap (free, no API key needed)"""
     try:
-        print("Fetching NIFTY performance...")
-        hist = get_ticker_data("^NSEI")
+        # This is a simple web scraping approach
+        status = "📊 *MARKET STATUS*\n\n"
+        status += "_Note: Live market data from Yahoo Finance is currently unavailable._\n"
+        status += "_News updates are still working normally._\n\n"
         
-        if hist is not None and len(hist) >= 5:
-            week_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
-            high = hist['High'].max()
-            low = hist['Low'].min()
-            
-            status += f"• NIFTY 50 (5-day): {week_change:+.2f}%\n"
-            status += f"  Week High: ₹{high:,.2f} | Low: ₹{low:,.2f}\n"
-            print(f"✓ NIFTY Performance: {week_change:+.2f}%")
-        else:
-            status += "_Performance data updating..._\n"
-    except Exception as e:
-        print(f"Error fetching performance: {e}")
-        status += "_Performance data updating..._\n"
-    
-    print(f"\nMarket status length: {len(status)} characters")
-    return status
-
-def is_recent_article(published_date_str):
-    """Check if article is from 2024 or later (not old 2023 news)"""
-    try:
-        # Common date formats in RSS feeds
-        from datetime import datetime
-        import dateutil.parser
+        # Get basic info from news headlines instead
+        status += "For real-time market prices:\n"
+        status += "• Visit: https://www.google.com/finance\n"
+        status += "• NSE India: https://www.nseindia.com\n"
+        status += "• BSE: https://www.bseindia.com\n"
         
-        if published_date_str:
-            pub_date = dateutil.parser.parse(published_date_str)
-            # Only accept articles from 2024 onwards
-            return pub_date.year >= 2024
+        return status
     except:
-        # If can't parse date, assume it's current
-        return True
-    
-    return True
+        return "📊 *MARKET STATUS*\n\n_Market data temporarily unavailable. Check news for updates._\n"
 
-def fetch_rss_headlines(feed_url, source_name):
-    """Fetch headlines only from RSS feeds - Filter out old 2023 news"""
+def get_market_summary_from_news():
+    """Extract market info from news headlines"""
+    try:
+        summary = "📊 *MARKET SUMMARY FROM NEWS*\n\n"
+        
+        # Get latest market-related headlines
+        market_headlines = []
+        
+        for source_type, feeds in NEWS_SOURCES.items():
+            for feed_url in feeds[:1]:  # Just first feed from each source
+                try:
+                    feed = feedparser.parse(feed_url)
+                    for entry in feed.entries[:5]:
+                        title = entry.get('title', '')
+                        if any(word in title.lower() for word in ['nifty', 'sensex', 'market', 'stock', 'index']):
+                            market_headlines.append(f"• {title}")
+                            if len(market_headlines) >= 5:
+                                break
+                except:
+                    continue
+                
+                if len(market_headlines) >= 5:
+                    break
+            
+            if len(market_headlines) >= 5:
+                break
+        
+        if market_headlines:
+            summary += "\n".join(market_headlines[:5])
+        else:
+            summary += "No recent market updates in headlines.\n"
+        
+        summary += "\n\n_For live prices, visit Google Finance or NSE India._"
+        
+        return summary
+    except:
+        return "📊 *MARKET INFO*\n\n_Check news headlines for market updates._\n"
+
+def fetch_rss_headlines(feed_url, source_name, limit=15):
+    """Fetch headlines from RSS feeds"""
     headlines = []
     try:
         feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:15]:  # Get more to account for filtering
+        for entry in feed.entries[:limit]:
             title = entry.get('title', 'No Title')
             link = entry.get('link', '')
             published = entry.get('published', '')
-            
-            # Skip old articles
-            if not is_recent_article(published):
-                continue
             
             if title and link:
                 headlines.append({
@@ -281,18 +115,14 @@ def fetch_rss_headlines(feed_url, source_name):
                     'source': source_name,
                     'published': published
                 })
-                
-                # Stop after 10 current articles
-                if len(headlines) >= 10:
-                    break
                     
     except Exception as e:
         print(f"Error fetching {source_name}: {e}")
     
     return headlines
 
-def get_news_headlines():
-    """Get 30-40 current headlines (2024+ only, no old 2023 news)"""
+def get_news_headlines(limit=40):
+    """Get current headlines"""
     if not os.path.exists(DB_FILE): 
         open(DB_FILE, 'w').close()
     
@@ -301,33 +131,28 @@ def get_news_headlines():
 
     all_headlines = []
     
-    # === RSS FEEDS - Mint, Bloomberg, Economic Times, Reuters ===
-    print("Fetching current RSS news (2024+)...")
+    # === RSS FEEDS ===
+    print("Fetching current news...")
     for source_type, feeds in NEWS_SOURCES.items():
         for feed_url in feeds:
             headlines = fetch_rss_headlines(feed_url, source_type.upper())
             all_headlines.extend(headlines)
-            print(f"Got {len(headlines)} current articles from {source_type}")
             time.sleep(0.3)
     
-    print(f"Total {len(all_headlines)} current headlines from RSS")
+    print(f"Got {len(all_headlines)} headlines from RSS")
     
-    # === NewsAPI - Recent Financial News ===
+    # === NewsAPI - Last 3 days ===
     if NEWS_KEY:
         try:
-            print("Fetching NewsAPI (recent news only)...")
-            
-            # Get articles from last 7 days only
-            from_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+            print("Fetching NewsAPI...")
+            from_date = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
             
             queries = [
                 "india stock market",
                 "nifty sensex",
-                "RBI OR SEBI india",
-                "fintech india",
-                "derivatives futures options india",
-                "gold silver commodity",
-                "rupee dollar forex",
+                "RBI SEBI",
+                "tariff trade india",
+                "rupee dollar",
                 "indian economy"
             ]
             
@@ -347,11 +172,11 @@ def get_news_headlines():
                 
                 time.sleep(0.4)
             
-            print(f"Total headlines after NewsAPI: {len(all_headlines)}")
+            print(f"Total after NewsAPI: {len(all_headlines)}")
         except Exception as e:
             print(f"NewsAPI error: {e}")
     
-    # === FORMAT CURRENT HEADLINES ONLY ===
+    # === FORMAT HEADLINES ===
     news_items = []
     count = 1
     
@@ -364,7 +189,7 @@ def get_news_headlines():
         if not headline['title'] or len(headline['title']) < 10:
             continue
         
-        if len(news_items) >= 40:
+        if len(news_items) >= limit:
             break
         
         source = headline['source'].upper()
@@ -378,125 +203,150 @@ def get_news_headlines():
         with open(DB_FILE, "a") as f: 
             f.write(url + "\n")
     
-    print(f"Formatted {len(news_items)} unique current headlines")
+    print(f"Formatted {len(news_items)} unique headlines")
     return news_items
 
 def check_breaking_news():
-    """Check for breaking news"""
+    """Improved breaking news detection - catches important news like tariffs"""
     if not os.path.exists(BREAKING_NEWS_FILE):
         open(BREAKING_NEWS_FILE, 'w').close()
     
     with open(BREAKING_NEWS_FILE, "r") as f:
         sent_breaking = set(f.read().splitlines())
     
+    # Expanded keywords to catch more important news
     breaking_keywords = [
-        'breaking', 'urgent', 'alert', 'emergency', 
-        'crash', 'surge', 'plunge', 'soar',
+        'breaking', 'urgent', 'alert', 'emergency',
+        'crash', 'surge', 'plunge', 'soar', 'plummet',
         'rbi announcement', 'sebi action', 'emergency meeting',
-        'market halt', 'circuit breaker', 'trading suspended'
+        'market halt', 'circuit breaker', 'trading suspended',
+        'tariff', 'trade war', 'trade deal', 'sanctions',
+        'us india', 'trump', 'policy change',
+        'ban', 'restriction', 'regulation',
+        'default', 'bankruptcy', 'collapse'
     ]
     
     breaking_news = []
     
-    if NEWS_KEY:
-        try:
-            # Only today's news
-            from_date = datetime.now().strftime('%Y-%m-%d')
-            
-            query = "india AND (stock market OR economy OR RBI OR SEBI)"
-            url = f"https://newsapi.org/v2/everything?q={query}&from={from_date}&sortBy=publishedAt&pageSize=10&language=en&apiKey={NEWS_KEY}"
-            response = requests.get(url, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                for article in data.get('articles', [])[:10]:
-                    title_lower = article.get('title', '').lower()
-                    url = article.get('url', '')
+    # Check RSS feeds for breaking news
+    print("Checking RSS for breaking news...")
+    for source_type, feeds in NEWS_SOURCES.items():
+        for feed_url in feeds[:1]:  # Check first feed from each source
+            try:
+                feed = feedparser.parse(feed_url)
+                for entry in feed.entries[:10]:
+                    title = entry.get('title', '')
+                    title_lower = title.lower()
+                    link = entry.get('link', '')
                     
                     if any(keyword in title_lower for keyword in breaking_keywords):
-                        if url not in sent_breaking:
+                        if link not in sent_breaking:
                             breaking_news.append({
-                                'title': article.get('title', ''),
-                                'description': article.get('description', '')[:300],
-                                'url': url,
-                                'source': article.get('source', {}).get('name', 'NEWS')
+                                'title': title,
+                                'description': entry.get('summary', title)[:300],
+                                'url': link,
+                                'source': source_type.upper()
                             })
                             
                             with open(BREAKING_NEWS_FILE, "a") as f:
-                                f.write(url + "\n")
+                                f.write(link + "\n")
+            except:
+                continue
+    
+    # Check NewsAPI
+    if NEWS_KEY:
+        try:
+            from_date = datetime.now().strftime('%Y-%m-%d')
+            
+            # Search for important keywords
+            important_queries = [
+                "india tariff",
+                "us india trade",
+                "RBI emergency",
+                "market crash india",
+                "breaking news india economy"
+            ]
+            
+            for query in important_queries:
+                url = f"https://newsapi.org/v2/everything?q={query}&from={from_date}&sortBy=publishedAt&pageSize=5&language=en&apiKey={NEWS_KEY}"
+                response = requests.get(url, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for article in data.get('articles', []):
+                        title_lower = article.get('title', '').lower()
+                        url = article.get('url', '')
+                        
+                        if any(keyword in title_lower for keyword in breaking_keywords):
+                            if url not in sent_breaking:
+                                breaking_news.append({
+                                    'title': article.get('title', ''),
+                                    'description': article.get('description', '')[:300],
+                                    'url': url,
+                                    'source': article.get('source', {}).get('name', 'NEWS')
+                                })
+                                
+                                with open(BREAKING_NEWS_FILE, "a") as f:
+                                    f.write(url + "\n")
+                
+                time.sleep(0.3)
         except:
             pass
     
     return breaking_news
 
 def send_full_briefing():
-    """Send comprehensive twice-daily market briefing"""
+    """Send comprehensive briefing"""
     try:
         current_hour = datetime.utcnow().hour
         
         if current_hour <= 6:
             time_label = "Morning"
-            greeting = "Good Morning! Here is your market update."
+            greeting = "Good Morning! Here is your update."
         else:
             time_label = "Evening"
-            greeting = "Good Evening! Here is your market closing summary."
+            greeting = "Good Evening! Here is your update."
         
-        # 1. Header
-        header = f"🤵 *{time_label.upper()} MARKET UPDATE*\n"
+        # Header
+        header = f"🤵 *{time_label.upper()} UPDATE*\n"
         header += f"📅 {datetime.now().strftime('%d %B %Y, %I:%M %p IST')}\n"
         header += f"\n{greeting}\n"
         header += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        # 2. Market Data
-        print("\n" + "="*50)
-        print("FETCHING MARKET DATA")
-        print("="*50)
+        # Market summary from news
+        print("Getting market summary from news...")
+        market_summary = get_market_summary_from_news()
         
-        market_data = get_market_status()
-        full_market_msg = header + market_data
+        bot.send_message(CHAT_ID, header + market_summary, parse_mode="Markdown")
+        time.sleep(2)
         
-        print("\n" + "="*50)
-        print("SENDING MARKET MESSAGE")
-        print("="*50)
-        
-        bot.send_message(CHAT_ID, full_market_msg, parse_mode="Markdown")
-        print("✓ Market message sent!")
-        time.sleep(3)
-        
-        # 3. Current News Headlines
-        bot.send_message(CHAT_ID, "📰 *Getting latest headlines (current news only)...*", parse_mode="Markdown")
+        # News Headlines
+        bot.send_message(CHAT_ID, "📰 *Getting latest headlines...*", parse_mode="Markdown")
         time.sleep(1)
         
-        print("\n" + "="*50)
-        print("FETCHING CURRENT NEWS HEADLINES")
-        print("="*50)
-        
-        all_headlines = get_news_headlines()
+        print("Fetching news...")
+        all_headlines = get_news_headlines(40)
         
         if not all_headlines:
             bot.send_message(CHAT_ID, "✅ No new headlines since last update.", parse_mode="Markdown")
         else:
-            print(f"\nSending {len(all_headlines)} current headlines...")
+            print(f"Sending {len(all_headlines)} headlines...")
             
             for i in range(0, len(all_headlines), 10):
                 chunk = "\n\n".join(all_headlines[i:i+10])
                 chunk_header = f"📰 *NEWS HEADLINES ({i+1}-{min(i+10, len(all_headlines))})*\n\n"
                 bot.send_message(CHAT_ID, chunk_header + chunk, parse_mode="Markdown", disable_web_page_preview=True)
-                print(f"✓ Sent headlines {i+1}-{min(i+10, len(all_headlines))}")
                 time.sleep(2)
             
-            summary = f"\n✅ *{time_label} Update Complete*\n"
-            summary += f"📊 Markets: Indian, Global, Currencies, Commodities\n"
-            summary += f"📰 Headlines: {len(all_headlines)} current news articles\n"
+            summary = f"\n✅ *Update Complete*\n"
+            summary += f"📰 Headlines: {len(all_headlines)} articles\n"
             summary += f"🔔 Next update: {'Evening (6 PM IST)' if time_label == 'Morning' else 'Tomorrow Morning (9 AM IST)'}\n"
-            summary += f"\n_Breaking news will be sent immediately if detected._"
             bot.send_message(CHAT_ID, summary, parse_mode="Markdown")
         
-        print("\n✅ BRIEFING COMPLETED!\n")
+        print("✅ Briefing completed!")
         
     except Exception as e:
-        error_msg = f"⚠️ Error: {str(e)}"
-        print(f"\n❌ ERROR: {error_msg}\n")
+        print(f"Error: {e}")
         try:
             bot.send_message(CHAT_ID, f"⚠️ Error: {str(e)[:200]}", parse_mode="Markdown")
         except:
@@ -504,9 +354,7 @@ def send_full_briefing():
 
 def send_breaking_news_alert():
     """Send breaking news alerts"""
-    print("\n" + "="*50)
-    print("CHECKING BREAKING NEWS")
-    print("="*50)
+    print("Checking for breaking news...")
     
     breaking = check_breaking_news()
     
@@ -514,72 +362,147 @@ def send_breaking_news_alert():
         print("No breaking news found.")
         return
     
-    print(f"Found {len(breaking)} breaking news items")
+    print(f"Found {len(breaking)} breaking news items!")
     
     for news in breaking:
         try:
-            alert = f"🚨 *BREAKING NEWS ALERT*\n\n"
+            alert = f"🚨 *BREAKING NEWS*\n\n"
             alert += f"📰 *{news['source']}*\n"
             alert += f"*{news['title']}*\n\n"
-            alert += f"{news['description']}\n\n"
+            
+            # Clean description
+            desc = BeautifulSoup(news['description'], 'html.parser').get_text()
+            alert += f"{desc}\n\n"
             alert += f"🔗 [Read Full Story]({news['url']})"
             
             bot.send_message(CHAT_ID, alert, parse_mode="Markdown", disable_web_page_preview=True)
-            print(f"✓ Sent breaking news alert")
+            print(f"✓ Sent: {news['title'][:50]}...")
             time.sleep(1)
         except Exception as e:
-            print(f"Error sending breaking news: {e}")
+            print(f"Error sending alert: {e}")
+
+def detect_command(text):
+    """Detect which command user wants"""
+    text_lower = text.lower()
+    
+    for command, triggers in COMMAND_TRIGGERS.items():
+        if any(trigger in text_lower for trigger in triggers):
+            return command
+    
+    return None
 
 @bot.message_handler(func=lambda m: True)
 def on_message(message):
-    """Handle user messages"""
+    """Handle user messages with command triggers"""
     try:
-        bot.reply_to(message, 
-            "⚙️ *Getting your market update...*\n\n"
-            "_Current news only (no old 2023 articles)_\n"
-            "_Indian markets, global indices, currencies, commodities, and 30-40 latest headlines._\n\n"
-            "_Please wait 30-60 seconds..._", 
-            parse_mode="Markdown")
-        send_full_briefing()
+        text = message.text
+        command = detect_command(text)
+        
+        if command == 'help':
+            help_text = """
+🤵 *MARKET ADVISOR BOT*
+
+*Available Commands:*
+
+📰 *News Commands:*
+• `news` or `headlines` or `update` - Get latest news
+• `latest` - Same as news
+
+📊 *Market Commands:*
+• `market` or `markets` - Market summary from news
+• `nifty` or `sensex` or `stock` - Market info
+
+🆘 *Other:*
+• `help` or `hi` or `hello` - Show this help
+• `breaking` - Check breaking news
+
+*Examples:*
+• Just type: `news`
+• Or: `give me latest headlines`
+• Or: `what's the market doing`
+• Or: `hi`
+
+_Bot sends automatic updates twice daily at 9 AM and 6 PM IST._
+            """
+            bot.reply_to(message, help_text, parse_mode="Markdown")
+        
+        elif command == 'market':
+            bot.reply_to(message, "📊 Getting market info...", parse_mode="Markdown")
+            market_summary = get_market_summary_from_news()
+            bot.send_message(message.chat.id, market_summary, parse_mode="Markdown")
+        
+        elif command == 'news':
+            bot.reply_to(message, "📰 Fetching latest headlines...", parse_mode="Markdown")
+            headlines = get_news_headlines(20)
+            
+            if headlines:
+                for i in range(0, len(headlines), 10):
+                    chunk = "\n\n".join(headlines[i:i+10])
+                    chunk_header = f"📰 *LATEST HEADLINES ({i+1}-{min(i+10, len(headlines))})*\n\n"
+                    bot.send_message(message.chat.id, chunk_header + chunk, parse_mode="Markdown", disable_web_page_preview=True)
+                    time.sleep(1)
+            else:
+                bot.send_message(message.chat.id, "No new headlines available.")
+        
+        elif command == 'breaking':
+            bot.reply_to(message, "🔍 Checking for breaking news...")
+            breaking = check_breaking_news()
+            
+            if breaking:
+                for news in breaking[:5]:
+                    alert = f"🚨 *BREAKING*\n\n*{news['source']}*: {news['title']}\n\n🔗 [Read]({news['url']})"
+                    bot.send_message(message.chat.id, alert, parse_mode="Markdown", disable_web_page_preview=True)
+                    time.sleep(1)
+            else:
+                bot.send_message(message.chat.id, "No breaking news at the moment.")
+        
+        else:
+            # Default response
+            bot.reply_to(message, 
+                "👋 Hi! I'm your Market Advisor Bot.\n\n"
+                "Type `news` for headlines or `help` for commands.",
+                parse_mode="Markdown")
+    
     except Exception as e:
-        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+        print(f"Error handling message: {e}")
+        bot.reply_to(message, "Type `help` for available commands.")
 
 # === MAIN EXECUTION ===
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("MARKET ADVISOR BOT - CURRENT NEWS ONLY")
+    print("MARKET ADVISOR BOT WITH COMMAND TRIGGERS")
     print("="*60)
     print(f"Time: {datetime.now()}")
     print(f"Bot Token: {'✓' if TOKEN else '✗ MISSING'}")
     print(f"Chat ID: {'✓' if CHAT_ID else '✗ MISSING'}")
-    print(f"News API Key: {'✓' if NEWS_KEY else '✗ MISSING'}")
-    print("\nNews Sources:")
-    print("✓ Mint (LiveMint)")
-    print("✓ Bloomberg")
-    print("✓ Economic Times")
-    print("✓ Reuters")
-    print("✓ NewsAPI (last 7 days only)")
-    print("\n✗ MoneyControl (REMOVED - shows old 2023 news)")
+    print(f"News API: {'✓' if NEWS_KEY else '✗ MISSING'}")
+    print("\nCommand Triggers:")
+    for cmd, triggers in COMMAND_TRIGGERS.items():
+        print(f"• {cmd}: {', '.join(triggers)}")
     print("="*60 + "\n")
     
     is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
     
     try:
         if is_github_actions:
+            print("Running scheduled update...")
             send_full_briefing()
+            print("\nChecking breaking news...")
             send_breaking_news_alert()
-            print("\n" + "="*60)
-            print("ALL TASKS COMPLETED")
-            print("="*60 + "\n")
+            print("\n✅ ALL TASKS COMPLETED\n")
         else:
             print("Starting bot in polling mode...")
-            print("Send any message to get current news update\n")
+            print("Bot will respond to messages!\n")
+            print("Try sending:")
+            print("• 'news' - for headlines")
+            print("• 'market' - for market info")
+            print("• 'help' - for all commands\n")
             bot.infinity_polling()
             
     except Exception as e:
-        print(f"\n❌ FATAL ERROR: {e}\n")
+        print(f"\n❌ ERROR: {e}\n")
         if CHAT_ID:
             try:
-                bot.send_message(CHAT_ID, f"⚠️ Bot error: {str(e)[:200]}", parse_mode="Markdown")
+                bot.send_message(CHAT_ID, f"⚠️ Bot error: {str(e)[:200]}")
             except:
                 pass
